@@ -21,7 +21,7 @@ LR = 1e-4
 POS_WEIGHT = 8.0
 SMOOTHING = 0.01
 THRESHOLD = 0.5
-NUM_WORKERS = 2  # set to 0 if multiprocessing causes issues on Windows
+NUM_WORKERS = 0
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
