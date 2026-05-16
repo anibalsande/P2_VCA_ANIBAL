@@ -3,25 +3,18 @@ import torch
 from sklearn.metrics import roc_auc_score, roc_curve
 
 
-def get_segmentation_masks(outputs, threshold=0.5):
-    return (torch.sigmoid(outputs) > threshold).float()
-
-
-def compute_metrics(pred_masks, true_masks, eps=1e-7):
-    pred = pred_masks.view(-1).float()
-    true = true_masks.view(-1).float()
-
+def compute_metrics(pred_flat, true_flat, eps=1e-7):
+    pred = pred_flat.float()
+    true = true_flat.float()
     TP = (pred * true).sum()
     FP = (pred * (1 - true)).sum()
     FN = ((1 - pred) * true).sum()
     TN = ((1 - pred) * (1 - true)).sum()
-
-    accuracy  = (TP + TN) / (TP + FP + FN + TN + eps)
+    accuracy = (TP + TN) / (TP + FP + FN + TN + eps)
     precision = TP / (TP + FP + eps)
-    recall    = TP / (TP + FN + eps)
-    dice      = 2 * precision * recall / (precision + recall + eps)
-    iou       = TP / (TP + FP + FN + eps)
-
+    recall = TP / (TP + FN + eps)
+    dice = 2 * TP / (2 * TP + FP + FN + eps)
+    iou = TP / (TP + FP + FN + eps)
     return {
         'accuracy':  accuracy.item(),
         'precision': precision.item(),
@@ -31,55 +24,59 @@ def compute_metrics(pred_masks, true_masks, eps=1e-7):
     }
 
 
-def evaluate_model(model, loader, device, threshold=0.5):
-    """
-    Devuelve (metrics_dict, fpr_array, tpr_array).
-    metrics_dict incluye accuracy, precision, recall, dice, iou, auc.
-    """
+def _collect(model, loader, device):
+    """Single forward pass over the loader. Returns (images, probs, gt) as CPU tensors."""
     model.eval()
-    acc_m = {k: [] for k in ('accuracy', 'precision', 'recall', 'dice', 'iou')}
-    all_probs, all_gt = [], []
-
+    imgs_l, probs_l, gt_l = [], [], []
     with torch.no_grad():
         for images, masks in loader:
-            logits     = model(images.to(device))
-            pred_masks = get_segmentation_masks(logits, threshold)
-            gt_binary  = (masks.to(device) > 0.5).float()
-
-            for k, v in compute_metrics(pred_masks, gt_binary).items():
-                acc_m[k].append(v)
-
-            all_probs.append(torch.sigmoid(logits).cpu())
-            all_gt.append(gt_binary.cpu())
-
-    probs_flat = torch.cat(all_probs).numpy().flatten()
-    gt_flat    = torch.cat(all_gt).numpy().flatten()
-
-    metrics = {k: float(np.mean(v)) for k, v in acc_m.items()}
-    metrics['auc'] = float(roc_auc_score(gt_flat, probs_flat))
-
-    fpr, tpr, _ = roc_curve(gt_flat, probs_flat)
-    return metrics, fpr, tpr
+            logits = model(images.to(device))
+            probs_l.append(torch.sigmoid(logits).cpu())
+            gt_l.append((masks > 0.5).float())
+            imgs_l.append(images.cpu())
+    return torch.cat(imgs_l), torch.cat(probs_l), torch.cat(gt_l)
 
 
-def threshold_sweep(model, loader, device, thresholds=None):
-    """Devuelve lista de dicts {threshold, accuracy, precision, recall, dice, iou}."""
-    if thresholds is None:
-        thresholds = np.linspace(0.05, 0.95, 37)
+def find_optimal_threshold(probs_flat, gt_flat, metric='dice', n=37):
+    """Grid search over n thresholds; returns the one maximising `metric`."""
+    best_thr, best_val = 0.5, -1.0
+    for thr in np.linspace(0.05, 0.95, n):
+        m = compute_metrics((probs_flat > thr).float(), gt_flat)
+        if m[metric] > best_val:
+            best_val, best_thr = m[metric], float(thr)
+    return best_thr
 
-    model.eval()
-    probs_all, gt_all = [], []
 
-    with torch.no_grad():
-        for images, masks in loader:
-            probs_all.append(torch.sigmoid(model(images.to(device))).cpu())
-            gt_all.append(masks)
+def run_evaluation(model, loader, device, threshold=0.5, opt_metric='dice'):
+    """
+    Single-pass evaluation. Returns a dict with:
+      images, probs, gt  — (N, 1, H, W) CPU tensors
+      metrics_05         — metrics dict at threshold=0.5
+      metrics_opt        — metrics dict at optimal threshold
+      opt_threshold      — optimal threshold value
+      fpr, tpr, auc      — ROC curve data
+    """
+    images, probs, gt = _collect(model, loader, device)
+    probs_flat = probs.flatten()
+    gt_flat = gt.flatten()
 
-    probs_all = torch.cat(probs_all)
-    gt        = (torch.cat(gt_all) > 0.5).float()
+    metrics_05 = compute_metrics((probs_flat > threshold).float(), gt_flat)
+    auc = float(roc_auc_score(gt_flat.numpy(), probs_flat.numpy()))
+    metrics_05['auc'] = auc
+    fpr, tpr, _ = roc_curve(gt_flat.numpy(), probs_flat.numpy())
 
-    records = []
-    for thr in thresholds:
-        m = compute_metrics((probs_all > thr).float(), gt)
-        records.append({'threshold': float(thr), **m})
-    return records
+    opt_thr = find_optimal_threshold(probs_flat, gt_flat, metric=opt_metric)
+    metrics_opt = compute_metrics((probs_flat > opt_thr).float(), gt_flat)
+    metrics_opt['auc'] = auc
+
+    return {
+        'images':        images,
+        'probs':         probs,
+        'gt':            gt,
+        'metrics_05':    metrics_05,
+        'metrics_opt':   metrics_opt,
+        'opt_threshold': opt_thr,
+        'fpr':           fpr,
+        'tpr':           tpr,
+        'auc':           auc,
+    }

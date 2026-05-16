@@ -1,9 +1,6 @@
-import os
 import numpy as np
 import matplotlib.pyplot as plt
-import torch
-
-from evaluate import get_segmentation_masks
+import matplotlib.patches as mpatches
 
 
 def plot_single_loss(losses, title, save_path=None):
@@ -13,9 +10,25 @@ def plot_single_loss(losses, title, save_path=None):
         ax.set_yscale(scale)
         ax.set_xlabel('Época')
         ax.set_ylabel('Loss')
-        ax.set_title(f'{title} – escala {"lineal" if scale == "linear" else "logarítmica"}')
+        lbl = 'lineal' if scale == 'linear' else 'logarítmica'
+        ax.set_title(f'{title} – escala {lbl}')
         ax.legend()
         ax.grid(True, which='both', alpha=0.3)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.show()
+
+
+def plot_single_accuracy(accs, title, save_path=None):
+    plt.figure(figsize=(7, 4))
+    plt.plot(accs, label='Train Accuracy')
+    plt.xlabel('Época')
+    plt.ylabel('Pixel Accuracy')
+    plt.title(f'{title} – accuracy (lineal)')
+    plt.ylim(0, 1)
+    plt.legend()
+    plt.grid(alpha=0.3)
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
@@ -40,20 +53,37 @@ def plot_all_losses(losses_dict, save_path=None):
     plt.show()
 
 
-def plot_comparison_bar(results, save_path=None):
-    """Bar chart: IoU y Dice por experimento."""
-    names = list(results.keys())
-    ious  = [results[n]['iou']  for n in names]
-    dices = [results[n]['dice'] for n in names]
+def plot_all_accuracies(accs_dict, save_path=None):
+    plt.figure(figsize=(9, 4))
+    for name, accs in accs_dict.items():
+        plt.plot(accs, label=name)
+    plt.xlabel('Época')
+    plt.ylabel('Pixel Accuracy')
+    plt.title('Train Accuracy – todos los experimentos')
+    plt.ylim(0, 1)
+    plt.legend(fontsize=8)
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.show()
 
-    x = np.arange(len(names)); w = 0.35
+
+def plot_comparison_bar(results, save_path=None):
+    """Bar chart: IoU y Dice por experimento (threshold=0.5)."""
+    names = list(results.keys())
+    ious = [results[n]['metrics_05']['iou'] for n in names]
+    dices = [results[n]['metrics_05']['dice'] for n in names]
+
+    x = np.arange(len(names))
+    w = 0.35
     fig, ax = plt.subplots(figsize=(12, 4))
-    ax.bar(x - w/2, ious,  w, label='IoU',  alpha=0.85)
+    ax.bar(x - w/2, ious, w, label='IoU', alpha=0.85)
     ax.bar(x + w/2, dices, w, label='Dice', alpha=0.85)
     ax.set_xticks(x)
     ax.set_xticklabels(names, rotation=15, ha='right', fontsize=9)
     ax.set_ylabel('Score')
-    ax.set_title('Comparativa IoU / Dice por experimento')
+    ax.set_title('Comparativa IoU / Dice por experimento (thr=0.5)')
     ax.legend()
     ax.grid(axis='y', alpha=0.3)
     plt.tight_layout()
@@ -70,7 +100,7 @@ def plot_roc_curves(roc_data, save_path=None):
     plt.plot([0, 1], [0, 1], 'k--', label='Random')
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.title('Curvas ROC')
+    plt.title('Curvas ROC – Test')
     plt.legend(fontsize=8)
     plt.grid(alpha=0.3)
     plt.tight_layout()
@@ -79,52 +109,98 @@ def plot_roc_curves(roc_data, save_path=None):
     plt.show()
 
 
-def plot_threshold_analysis(sweep_dict, metric='iou', save_path=None):
-    """sweep_dict: {exp_name: list_of_records}"""
-    plt.figure(figsize=(9, 4))
-    for name, records in sweep_dict.items():
-        xs = [r['threshold'] for r in records]
-        ys = [r[metric]      for r in records]
-        plt.plot(xs, ys, marker='o', markersize=3, label=name)
-        best_thr = max(records, key=lambda r: r[metric])['threshold']
-        plt.axvline(best_thr, linestyle='--', alpha=0.25)
-    plt.xlabel('Umbral')
-    plt.ylabel(metric.upper())
-    plt.title(f'{metric.upper()} vs Umbral de decisión')
-    plt.legend(fontsize=8)
-    plt.grid(alpha=0.3)
+def plot_comparison_table(results, cols=None, save_path=None):
+    """Render metrics for both thr=0.5 and optimal as a matplotlib table."""
+    if cols is None:
+        cols = ['accuracy', 'precision', 'recall', 'dice', 'iou', 'auc']
+    names = list(results.keys())
+    rows, row_labels = [], []
+    for name in names:
+        m05 = results[name]['metrics_05']
+        mopt = results[name]['metrics_opt']
+        opt_thr = results[name]['opt_threshold']
+        rows.append([f"{m05[c]:.4f}" for c in cols])
+        rows.append([f"{mopt[c]:.4f}" for c in cols])
+        row_labels.append(f"{name}  thr=0.50")
+        row_labels.append(f"{name}  thr={opt_thr:.2f}*")
+
+    fig, ax = plt.subplots(figsize=(14, max(4, len(rows) * 0.55 + 1.5)))
+    ax.axis('off')
+    tbl = ax.table(
+        cellText=rows,
+        rowLabels=row_labels,
+        colLabels=[c.upper() for c in cols],
+        cellLoc='center',
+        loc='center',
+    )
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(8)
+    tbl.scale(1.2, 1.6)
+    ax.set_title('Tabla Comparativa – Métricas Test  (* umbral óptimo por Dice)',
+                 pad=20, fontsize=11)
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.show()
 
 
-def show_qualitative(model, loader, device, threshold=0.5,
-                     n_show=3, title_prefix='', save_dir=None):
-    model.eval()
-    shown = 0
-    with torch.no_grad():
-        for images, masks in loader:
-            logits     = model(images.to(device))
-            pred_masks = get_segmentation_masks(logits, threshold).cpu()
-            for i in range(images.size(0)):
-                if shown >= n_show:
-                    return
-                orig = images[i].squeeze().numpy()
-                gt   = masks[i].squeeze().numpy()
-                pred = pred_masks[i].squeeze().numpy()
+def _make_overlay(img, pred_bool, gt_bool):
+    """RGB error map: TP=green, FP=red, FN=blue, TN=grey image."""
+    rgb = np.stack([img, img, img], axis=2)
+    rgb[pred_bool & gt_bool] = [0.0, 0.75, 0.0]
+    rgb[pred_bool & ~gt_bool] = [0.75, 0.0, 0.0]
+    rgb[~pred_bool & gt_bool] = [0.0, 0.0, 0.75]
+    return rgb
 
-                fig, axes = plt.subplots(1, 4, figsize=(16, 4))
-                for ax, im, ttl in zip(axes,
-                                       [orig, gt, pred, orig * pred],
-                                       ['Original', 'GT', 'Predicción', 'Solapamiento']):
-                    ax.imshow(im, cmap='gray')
-                    ax.set_title(ttl)
-                    ax.axis('off')
-                fig.suptitle(f'{title_prefix} – test {shown + 1}')
-                plt.tight_layout()
-                if save_dir:
-                    plt.savefig(os.path.join(save_dir, f'qual_{shown+1:02d}.png'),
-                                dpi=120, bbox_inches='tight')
-                plt.show()
-                shown += 1
+
+def show_qualitative_all(images, probs, gt, threshold=0.5, opt_threshold=0.5,
+                          title='', save_path=None):
+    """
+    Single grid showing all test images.
+    Columns: Original | Pred (thr) | Pred (opt) | Ground Truth | Overlay
+    """
+    n = images.shape[0]
+    col_titles = [
+        'Original',
+        f'Pred (thr={threshold:.2f})',
+        f'Pred (opt={opt_threshold:.2f})',
+        'Ground Truth',
+        'Overlay  TP=G FP=R FN=B',
+    ]
+    fig, axes = plt.subplots(n, 5, figsize=(15, n * 2.2))
+    if n == 1:
+        axes = axes[np.newaxis, :]
+
+    for j, ct in enumerate(col_titles):
+        axes[0, j].set_title(ct, fontsize=8, pad=3)
+
+    for i in range(n):
+        img = images[i].squeeze().numpy()
+        prob = probs[i].squeeze().numpy()
+        gt_i = gt[i].squeeze().numpy()
+        pred_05 = (prob > threshold)
+        pred_opt = (prob > opt_threshold)
+        overlay = _make_overlay(img, pred_opt, gt_i.astype(bool))
+
+        for j, (im, cmap) in enumerate([
+            (img,                  'gray'),
+            (pred_05.astype(float), 'gray'),
+            (pred_opt.astype(float), 'gray'),
+            (gt_i,                 'gray'),
+            (overlay,              None),
+        ]):
+            axes[i, j].imshow(im, cmap=cmap, vmin=0, vmax=1)
+            axes[i, j].axis('off')
+        axes[i, 0].set_ylabel(f'Test {i+1}', fontsize=7, rotation=90, va='center')
+
+    patches = [
+        mpatches.Patch(color=[0.0, 0.75, 0.0], label='TP'),
+        mpatches.Patch(color=[0.75, 0.0, 0.0], label='FP'),
+        mpatches.Patch(color=[0.0, 0.0, 0.75], label='FN'),
+    ]
+    fig.legend(handles=patches, loc='lower right', fontsize=8, ncol=3)
+    fig.suptitle(title, fontsize=11, y=1.005)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=120, bbox_inches='tight')
+    plt.show()

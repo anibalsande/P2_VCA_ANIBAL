@@ -9,13 +9,13 @@ from PIL import Image
 
 
 def load_oct_data(img_dir, mask_dir):
-    """Carga todas las imágenes y máscaras en RAM como arrays uint8 (H, W)."""
-    img_paths  = sorted(glob.glob(os.path.join(img_dir, '*.jpg')))
+    """Load all images and masks into RAM as uint8 numpy arrays (H, W)."""
+    img_paths = sorted(glob.glob(os.path.join(img_dir, '*.jpg')))
     mask_paths = [os.path.join(mask_dir, os.path.basename(p)) for p in img_paths]
 
     images, masks = [], []
     for ip, mp in zip(img_paths, mask_paths):
-        img  = np.array(Image.open(ip).convert('L'))
+        img = np.array(Image.open(ip).convert('L'))
         mask = np.array(Image.open(mp).convert('L'))
         _, mask = cv2.threshold(mask, 100, 255, cv2.THRESH_BINARY)
         images.append(img)
@@ -25,41 +25,49 @@ def load_oct_data(img_dir, mask_dir):
     return images, masks
 
 
+def make_split(n_total, test_ratio=0.2, seed=42):
+    """Reproducible train/test split. Returns (train_idx, test_idx)."""
+    n_test = int(n_total * test_ratio)
+    gen = torch.Generator().manual_seed(seed)
+    perm = torch.randperm(n_total, generator=gen).tolist()
+    return perm[:n_total - n_test], perm[n_total - n_test:]
+
+
 class OCTDataset(Dataset):
     """
-    Dataset OCT con imágenes precargadas en RAM.
+    OCT dataset backed by preloaded RAM arrays.
 
-    geo_transform  — transforms geométricos: se aplican con la misma seed
-                     a la imagen Y a la máscara.
-    int_transform  — transforms de intensidad: solo a la imagen, nunca a la máscara.
-    base_transform — resize + ToTensor: se usa cuando geo_transform es None.
+    When augment=True, img_transform and mask_transform are called with a
+    synchronized seed so geometric ops match between image and mask.
+    int_transform is applied to the image only, after geometric transforms.
     """
-
-    def __init__(self, images, masks, base_transform,
-                 geo_transform=None, int_transform=None):
-        self.images         = images
-        self.masks          = masks
-        self.base_transform = base_transform
-        self.geo_transform  = geo_transform
-        self.int_transform  = int_transform
+    def __init__(self, images, masks, img_transform, mask_transform,
+                 int_transform=None, augment=False):
+        self.images = images
+        self.masks = masks
+        self.img_transform = img_transform
+        self.mask_transform = mask_transform
+        self.int_transform = int_transform
+        self.augment = augment
 
     def __len__(self):
         return len(self.images)
 
     def __getitem__(self, idx):
         image = self.images[idx].copy()
-        mask  = self.masks[idx].copy()
+        mask = self.masks[idx].copy()
 
-        if self.geo_transform is not None:
-            # Misma seed → misma transformación geométrica en imagen y máscara
+        if self.augment:
             seed = np.random.randint(2147483647)
-            random.seed(seed);  torch.manual_seed(seed)
-            image = self.geo_transform(image)
-            random.seed(seed);  torch.manual_seed(seed)
-            mask  = self.geo_transform(mask)
+            random.seed(seed)
+            torch.manual_seed(seed)
+            image = self.img_transform(image)
+            random.seed(seed)
+            torch.manual_seed(seed)
+            mask = self.mask_transform(mask)
         else:
-            image = self.base_transform(image)
-            mask  = self.base_transform(mask)
+            image = self.img_transform(image)
+            mask = self.mask_transform(mask)
 
         if self.int_transform is not None:
             image = self.int_transform(image)

@@ -5,29 +5,32 @@ import torch
 from torch.utils.data import DataLoader
 
 from model import UNet
-from dataset import load_oct_data, OCTDataset
-from transforms import make_base_transform, make_geo_transform, make_int_transform
+from dataset import load_oct_data, make_split, OCTDataset
+from transforms import (base_img, base_mask, aug_img, aug_mask,
+                        int_transform, int_transform_speckle)
 from losses import get_weighted_bce, BCEDiceLoss
-from train import train_one_experiment
-from evaluate import evaluate_model, threshold_sweep
-from plots import (plot_single_loss, plot_all_losses, plot_comparison_bar,
-                   plot_roc_curves, plot_threshold_analysis, show_qualitative)
+from train import train_experiment
+from evaluate import run_evaluation
+from plots import (plot_single_loss, plot_single_accuracy,
+                   plot_all_losses, plot_all_accuracies,
+                   plot_comparison_bar, plot_roc_curves,
+                   plot_comparison_table, show_qualitative_all)
 
-SEED        = 42
-NUM_EPOCHS  = 150
-BATCH_SIZE  = 4
-LR          = 1e-4
-POS_WEIGHT  = 8.0
-RSIZE       = (416, 624)
-SMOOTHING   = 0.01
-THRESHOLD   = 0.5
-NUM_WORKERS = 2
+SEED = 42
+NUM_EPOCHS = 150
+BATCH_SIZE = 4
+LR = 1e-4
+POS_WEIGHT = 8.0
+SMOOTHING = 0.01
+THRESHOLD = 0.5
+NUM_WORKERS = 2  # set to 0 if multiprocessing causes issues on Windows
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-IMG_DIR    = 'OCT-dataset/images'
-MASK_DIR   = 'OCT-dataset/masks'
+IMG_DIR = 'OCT-dataset/images'
+MASK_DIR = 'OCT-dataset/masks'
 OUTPUT_DIR = 'results'
+
 
 def set_seed(seed):
     random.seed(seed)
@@ -42,27 +45,22 @@ def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     print(f"Device: {DEVICE}\n")
 
-    # Carga única en RAM
+    # Load once into RAM
     all_images, all_masks = load_oct_data(IMG_DIR, MASK_DIR)
-    total   = len(all_images)
-    n_test  = int(total * 0.2)
-    n_train = total - n_test
 
-    # Split único (80/20), hecho UNA sola vez
-    generator = torch.Generator().manual_seed(SEED)
-    perm      = torch.randperm(total, generator=generator).tolist()
-    train_idx = perm[:n_train]
-    test_idx  = perm[n_train:]
-    print(f"Split: {n_train} train / {n_test} test (total {total})\n")
+    # Single split done once before any experiment
+    train_idx, test_idx = make_split(len(all_images), test_ratio=0.2, seed=SEED)
+    print(f"Split: {len(train_idx)} train / {len(test_idx)} test\n")
 
-    # Transforms compartidos
-    base_t      = make_base_transform(RSIZE)
-    geo_t       = make_geo_transform(RSIZE)
-    int_no_spk  = make_int_transform(speckle=False)
-    int_spk     = make_int_transform(speckle=True)
+    train_images = [all_images[i] for i in train_idx]
+    train_masks = [all_masks[i] for i in train_idx]
+    test_images = [all_images[i] for i in test_idx]
+    test_masks = [all_masks[i] for i in test_idx]
 
-    # Experimentos
-    # (augment, speckle, loss_type, label_smoothing, nombre)
+    weighted_bce = get_weighted_bce(POS_WEIGHT, DEVICE)
+    bce_dice = BCEDiceLoss(alpha=0.5)
+
+    # (augment, speckle, loss_type, label_smoothing, name)
     experiments = [
         (False, False, 'bce',      0.0,       'E1_Baseline'),
         (True,  False, 'bce',      0.0,       'E2_BCE_Aug'),
@@ -71,98 +69,95 @@ def main():
         (True,  True,  'bce_dice', SMOOTHING, 'E5_BCEDice_Aug_Speckle_LS'),
     ]
 
-    weighted_bce = get_weighted_bce(POS_WEIGHT, DEVICE)
-    bce_dice     = BCEDiceLoss(alpha=0.5)
-
-    all_losses  = {}
+    all_losses = {}
+    all_accuracies = {}
     all_results = {}
-    all_roc     = {}
-    all_sweeps  = {}
+    all_roc = {}
 
     for augment, speckle, loss_type, label_smooth, exp_name in experiments:
         print(f"\n{'='*60}\n  {exp_name}\n{'='*60}")
-
-        # Resetear seed: misma inicialización de pesos y orden de batches
         set_seed(SEED)
 
         exp_dir = os.path.join(OUTPUT_DIR, exp_name)
         os.makedirs(exp_dir, exist_ok=True)
 
-        # Construir datasets a partir de los datos ya en RAM
-        int_t    = (int_spk if speckle else int_no_spk) if augment else None
+        int_t = (int_transform_speckle if speckle else int_transform) if augment else None
         train_ds = OCTDataset(
-            [all_images[i] for i in train_idx],
-            [all_masks[i]  for i in train_idx],
-            base_transform=base_t,
-            geo_transform=geo_t if augment else None,
+            train_images, train_masks,
+            img_transform=aug_img if augment else base_img,
+            mask_transform=aug_mask if augment else base_mask,
             int_transform=int_t,
+            augment=augment,
         )
         test_ds = OCTDataset(
-            [all_images[i] for i in test_idx],
-            [all_masks[i]  for i in test_idx],
-            base_transform=base_t,
+            test_images, test_masks,
+            img_transform=base_img,
+            mask_transform=base_mask,
         )
+
         train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,
                                   num_workers=NUM_WORKERS, pin_memory=True)
-        test_loader  = DataLoader(test_ds,  batch_size=BATCH_SIZE, shuffle=False,
-                                  num_workers=NUM_WORKERS, pin_memory=True)
+        test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE, shuffle=False,
+                                 num_workers=NUM_WORKERS, pin_memory=True)
 
-        model   = UNet(input_channels=1, n_class=1).to(DEVICE)
+        model = UNet(input_channels=1, n_class=1)
         loss_fn = weighted_bce if loss_type == 'bce' else bce_dice
 
-        # Entrenamiento
-        losses = train_one_experiment(
+        losses, accuracies = train_experiment(
             model, train_loader,
             num_epochs=NUM_EPOCHS, lr=LR, device=DEVICE,
             loss_fn=loss_fn, label_smoothing=label_smooth,
         )
         all_losses[exp_name] = losses
+        all_accuracies[exp_name] = accuracies
 
-        # Persistencia
         torch.save(model.state_dict(), os.path.join(exp_dir, 'model.pth'))
+
         plot_single_loss(losses, title=exp_name,
                          save_path=os.path.join(exp_dir, 'loss_curve.png'))
+        plot_single_accuracy(accuracies, title=exp_name,
+                             save_path=os.path.join(exp_dir, 'acc_curve.png'))
 
-        # Evaluación
-        metrics, fpr, tpr = evaluate_model(model, test_loader, DEVICE, THRESHOLD)
-        all_results[exp_name] = metrics
-        all_roc[exp_name]     = (fpr, tpr, metrics['auc'])
+        eval_res = run_evaluation(model, test_loader, DEVICE,
+                                  threshold=THRESHOLD, opt_metric='dice')
+        all_results[exp_name] = eval_res
+        all_roc[exp_name] = (eval_res['fpr'], eval_res['tpr'], eval_res['auc'])
 
-        # Barrido de umbral
-        sweep = threshold_sweep(model, test_loader, DEVICE)
-        all_sweeps[exp_name] = sweep
-        opt_thr = max(sweep, key=lambda r: r['iou'])['threshold']
-
-        print(f"\n  Métricas Test (thr={THRESHOLD}):")
-        for k, v in metrics.items():
+        opt_thr = eval_res['opt_threshold']
+        print(f"\n  Metricas Test (thr={THRESHOLD}):")
+        for k, v in eval_res['metrics_05'].items():
             print(f"    {k:<12}: {v:.4f}")
-        print(f"  Umbral óptimo (IoU máx): {opt_thr:.2f}")
+        print(f"\n  Metricas Test (thr={opt_thr:.3f} optimo por Dice):")
+        for k, v in eval_res['metrics_opt'].items():
+            print(f"    {k:<12}: {v:.4f}")
 
-        # Visualización cualitativa
-        show_qualitative(model, test_loader, DEVICE,
-                         threshold=THRESHOLD, n_show=3,
-                         title_prefix=exp_name, save_dir=exp_dir)
+        show_qualitative_all(
+            eval_res['images'], eval_res['probs'], eval_res['gt'],
+            threshold=THRESHOLD, opt_threshold=opt_thr,
+            title=exp_name,
+            save_path=os.path.join(exp_dir, 'qualitative.png'),
+        )
 
-    # ── Comparativa final ─────────────────────────────────────────────────
-    print(f"\n{'='*60}\n  RESUMEN FINAL\n{'='*60}")
-    cols   = ['accuracy', 'precision', 'recall', 'dice', 'iou', 'auc']
+    # ── Final summary ───────────────────────────────────────────────────────
+    print(f"\n{'='*60}\n  RESUMEN FINAL (thr={THRESHOLD})\n{'='*60}")
+    cols = ['accuracy', 'precision', 'recall', 'dice', 'iou', 'auc']
     header = f"{'Experimento':<35}" + "".join(f"{c.upper():>10}" for c in cols)
     print(header)
-    print("─" * len(header))
-    for name, m in all_results.items():
+    print("-" * len(header))
+    for name, res in all_results.items():
+        m = res['metrics_05']
         print(f"{name:<35}" + "".join(f"{m[c]:>10.4f}" for c in cols))
 
     plot_all_losses(all_losses,
                     save_path=os.path.join(OUTPUT_DIR, 'all_losses.png'))
+    plot_all_accuracies(all_accuracies,
+                        save_path=os.path.join(OUTPUT_DIR, 'all_accuracies.png'))
     plot_comparison_bar(all_results,
                         save_path=os.path.join(OUTPUT_DIR, 'comparison_bar.png'))
     plot_roc_curves(all_roc,
                     save_path=os.path.join(OUTPUT_DIR, 'roc_curves.png'))
-    plot_threshold_analysis(all_sweeps, metric='iou',
-                             save_path=os.path.join(OUTPUT_DIR, 'threshold_iou.png'))
-    plot_threshold_analysis(all_sweeps, metric='dice',
-                             save_path=os.path.join(OUTPUT_DIR, 'threshold_dice.png'))
-
+    plot_comparison_table(all_results,
+                          save_path=os.path.join(OUTPUT_DIR, 'comparison_table.png'))
     print(f"\nResultados en: {OUTPUT_DIR}/")
 
 
