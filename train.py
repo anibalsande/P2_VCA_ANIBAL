@@ -3,7 +3,7 @@ import torch.optim as optim
 
 
 def train_experiment(model, train_loader, num_epochs, lr, device,
-                     loss_fn, label_smoothing=0.0, log_every=10):
+                     loss_fn, label_smoothing=0.0):
     model = model.to(device)
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-2)
     losses = []
@@ -43,7 +43,6 @@ def train_experiment(model, train_loader, num_epochs, lr, device,
         losses.append(epoch_loss)
         accuracies.append(epoch_acc)
 
-        if (epoch + 1) % log_every == 0 or epoch == 0:
-            print(f"  Época [{epoch+1:3d}/{num_epochs}]  Loss: {epoch_loss:.4f}  Acc: {epoch_acc:.4f}")
+        print(f"  Época [{epoch+1:3d}/{num_epochs}]  Loss: {epoch_loss:.4f}  Acc: {epoch_acc:.4f}")
 
     return losses, accuracies
