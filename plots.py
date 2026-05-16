@@ -20,20 +20,6 @@ def plot_single_loss(losses, title, save_path=None):
     plt.show()
 
 
-def plot_single_accuracy(accs, title, save_path=None):
-    plt.figure(figsize=(7, 4))
-    plt.plot(accs, label='Train Accuracy')
-    plt.xlabel('Época')
-    plt.ylabel('Pixel Accuracy')
-    plt.title(f'{title} – accuracy (lineal)')
-    plt.ylim(0, 1)
-    plt.legend()
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.show()
-
 
 def plot_all_losses(losses_dict, save_path=None):
     fig, axes = plt.subplots(1, 2, figsize=(14, 4))
@@ -47,22 +33,6 @@ def plot_all_losses(losses_dict, save_path=None):
         ax.set_title(f'Todos los experimentos – escala {lbl}')
         ax.legend(fontsize=8)
         ax.grid(True, which='both', alpha=0.3)
-    plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.show()
-
-
-def plot_all_accuracies(accs_dict, save_path=None):
-    plt.figure(figsize=(9, 4))
-    for name, accs in accs_dict.items():
-        plt.plot(accs, label=name)
-    plt.xlabel('Época')
-    plt.ylabel('Pixel Accuracy')
-    plt.title('Train Accuracy – todos los experimentos')
-    plt.ylim(0, 1)
-    plt.legend(fontsize=8)
-    plt.grid(alpha=0.3)
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
@@ -103,41 +73,6 @@ def plot_roc_curves(roc_data, save_path=None):
     plt.title('Curvas ROC – Test')
     plt.legend(fontsize=8)
     plt.grid(alpha=0.3)
-    plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.show()
-
-
-def plot_comparison_table(results, cols=None, save_path=None):
-    """Render metrics for both thr=0.5 and optimal as a matplotlib table."""
-    if cols is None:
-        cols = ['accuracy', 'precision', 'recall', 'dice', 'iou', 'auc']
-    names = list(results.keys())
-    rows, row_labels = [], []
-    for name in names:
-        m05 = results[name]['metrics_05']
-        mopt = results[name]['metrics_opt']
-        opt_thr = results[name]['opt_threshold']
-        rows.append([f"{m05[c]:.4f}" for c in cols])
-        rows.append([f"{mopt[c]:.4f}" for c in cols])
-        row_labels.append(f"{name}  thr=0.50")
-        row_labels.append(f"{name}  thr={opt_thr:.2f}*")
-
-    fig, ax = plt.subplots(figsize=(14, max(4, len(rows) * 0.55 + 1.5)))
-    ax.axis('off')
-    tbl = ax.table(
-        cellText=rows,
-        rowLabels=row_labels,
-        colLabels=[c.upper() for c in cols],
-        cellLoc='center',
-        loc='center',
-    )
-    tbl.auto_set_font_size(False)
-    tbl.set_fontsize(8)
-    tbl.scale(1.2, 1.6)
-    ax.set_title('Tabla Comparativa – Métricas Test  (* umbral óptimo por Dice)',
-                 pad=20, fontsize=11)
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')

@@ -11,13 +11,11 @@ from transforms import (base_img, base_mask, aug_img, aug_mask,
 from losses import get_weighted_bce, BCEDiceLoss
 from train import train_experiment
 from evaluate import run_evaluation
-from plots import (plot_single_loss, plot_single_accuracy,
-                   plot_all_losses, plot_all_accuracies,
-                   plot_comparison_bar, plot_roc_curves,
-                   plot_comparison_table, show_qualitative_all)
+from plots import (plot_single_loss, plot_all_losses,
+                   plot_comparison_bar, plot_roc_curves, show_qualitative_all)
 
 SEED = 42
-NUM_EPOCHS = 10
+NUM_EPOCHS = 150
 BATCH_SIZE = 4
 LR = 1e-4
 POS_WEIGHT = 8.0
@@ -70,12 +68,10 @@ def main():
     ]
 
     all_losses = {}
-    all_accuracies = {}
     all_results = {}
-    all_roc = {}
 
     for augment, speckle, loss_type, label_smooth, exp_name in experiments:
-        print(f"\n{'='*60}\n  {exp_name}\n{'='*60}")
+        print(f"\n{'-'*60}\n  {exp_name}\n{'-'*60}")
         set_seed(SEED)
 
         exp_dir = os.path.join(OUTPUT_DIR, exp_name)
@@ -109,19 +105,15 @@ def main():
             loss_fn=loss_fn, label_smoothing=label_smooth,
         )
         all_losses[exp_name] = losses
-        all_accuracies[exp_name] = accuracies
 
         torch.save(model.state_dict(), os.path.join(exp_dir, 'model.pth'))
 
         plot_single_loss(losses, title=exp_name,
                          save_path=os.path.join(exp_dir, 'loss_curve.png'))
-        plot_single_accuracy(accuracies, title=exp_name,
-                             save_path=os.path.join(exp_dir, 'acc_curve.png'))
 
         eval_res = run_evaluation(model, test_loader, DEVICE,
                                   threshold=THRESHOLD, opt_metric='dice')
         all_results[exp_name] = eval_res
-        all_roc[exp_name] = (eval_res['fpr'], eval_res['tpr'], eval_res['auc'])
 
         opt_thr = eval_res['opt_threshold']
         print(f"\n  Metricas Test (thr={THRESHOLD}):")
@@ -131,6 +123,11 @@ def main():
         for k, v in eval_res['metrics_opt'].items():
             print(f"    {k:<12}: {v:.4f}")
 
+        plot_roc_curves(
+            {exp_name: (eval_res['fpr'], eval_res['tpr'], eval_res['auc'])},
+            save_path=os.path.join(exp_dir, 'roc_curve.png'),
+        )
+
         show_qualitative_all(
             eval_res['images'], eval_res['probs'], eval_res['gt'],
             threshold=THRESHOLD, opt_threshold=opt_thr,
@@ -139,26 +136,25 @@ def main():
         )
 
     # ── Final summary ───────────────────────────────────────────────────────
-    print(f"\n{'='*60}\n  RESUMEN FINAL (thr={THRESHOLD})\n{'='*60}")
     cols = ['accuracy', 'precision', 'recall', 'dice', 'iou', 'auc']
-    header = f"{'Experimento':<35}" + "".join(f"{c.upper():>10}" for c in cols)
+    header = f"{'Experimento':<38}" + "".join(f"{c.upper():>10}" for c in cols)
+    sep = "-" * len(header)
+    print(f"\n{sep}\n  RESUMEN FINAL\n{sep}")
     print(header)
-    print("-" * len(header))
+    print(sep)
     for name, res in all_results.items():
-        m = res['metrics_05']
-        print(f"{name:<35}" + "".join(f"{m[c]:>10.4f}" for c in cols))
+        m05 = res['metrics_05']
+        mopt = res['metrics_opt']
+        opt_thr = res['opt_threshold']
+        print(f"{(name + '  thr=0.50'):<38}" + "".join(f"{m05[c]:>10.4f}" for c in cols))
+        print(f"{'  → opt thr=' + f'{opt_thr:.2f}':<38}" + "".join(f"{mopt[c]:>10.4f}" for c in cols))
+        print()
 
     plot_all_losses(all_losses,
                     save_path=os.path.join(OUTPUT_DIR, 'all_losses.png'))
-    plot_all_accuracies(all_accuracies,
-                        save_path=os.path.join(OUTPUT_DIR, 'all_accuracies.png'))
     plot_comparison_bar(all_results,
                         save_path=os.path.join(OUTPUT_DIR, 'comparison_bar.png'))
-    plot_roc_curves(all_roc,
-                    save_path=os.path.join(OUTPUT_DIR, 'roc_curves.png'))
-    plot_comparison_table(all_results,
-                          save_path=os.path.join(OUTPUT_DIR, 'comparison_table.png'))
-    print(f"\nResultados en: {OUTPUT_DIR}/")
+    print(f"Resultados en: {OUTPUT_DIR}/")
 
 
 if __name__ == '__main__':
