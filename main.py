@@ -15,7 +15,7 @@ from plots import (plot_single_loss, plot_all_losses,
                    plot_comparison_bar, plot_roc_curves, show_qualitative_all)
 
 SEED = 42
-NUM_EPOCHS = 150
+NUM_EPOCHS = 2
 BATCH_SIZE = 8
 LR = 1e-4
 POS_WEIGHT = 8.0
@@ -43,10 +43,10 @@ def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     print(f"Device: {DEVICE}\n")
 
-    # Load once into RAM
+    # Carga una única vez en RAM
     all_images, all_masks = load_oct_data(IMG_DIR, MASK_DIR)
 
-    # Single split done once before any experiment
+    # Split train / test (20%) con semilla fija para reproducibilidad
     train_idx, test_idx = make_split(len(all_images), test_ratio=0.2, seed=SEED)
     print(f"Split: {len(train_idx)} train / {len(test_idx)} test\n")
 
@@ -135,7 +135,7 @@ def main():
             save_path=os.path.join(exp_dir, 'qualitative.png'),
         )
 
-    # ── Final summary ───────────────────────────────────────────────────────
+    # Resumen final
     cols = ['accuracy', 'precision', 'recall', 'dice', 'iou', 'auc']
     header = f"{'Experimento':<38}" + "".join(f"{c.upper():>10}" for c in cols)
     sep = "-" * len(header)

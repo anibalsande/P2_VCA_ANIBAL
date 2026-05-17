@@ -9,7 +9,6 @@ from PIL import Image
 
 
 def load_oct_data(img_dir, mask_dir):
-    """Load all images and masks into RAM as uint8 numpy arrays (H, W)."""
     img_paths = sorted(glob.glob(os.path.join(img_dir, '*.jpg')))
     mask_paths = [os.path.join(mask_dir, os.path.basename(p)) for p in img_paths]
 
@@ -34,13 +33,6 @@ def make_split(n_total, test_ratio=0.2, seed=42):
 
 
 class OCTDataset(Dataset):
-    """
-    OCT dataset backed by preloaded RAM arrays.
-
-    When augment=True, img_transform and mask_transform are called with a
-    synchronized seed so geometric ops match between image and mask.
-    int_transform is applied to the image only, after geometric transforms.
-    """
     def __init__(self, images, masks, img_transform, mask_transform,
                  int_transform=None, augment=False):
         self.images = images

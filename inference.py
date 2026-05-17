@@ -1,31 +1,16 @@
-"""
-Inference module — run a trained U-Net on a new image directory.
-
-Usage (no masks, pure prediction):
-    python inference.py --model results/E3_BCEDice_Aug/model.pth --img_dir /path/to/images
-
-Usage (with masks, full evaluation):
-    python inference.py --model results/E3_BCEDice_Aug/model.pth \
-        --img_dir /path/to/images --mask_dir /path/to/masks
-
-Optional flags:
-    --output       output directory (default: results_inference)
-    --threshold    decision threshold (default: 0.5)
-    --opt_metric   metric for optimal threshold: dice | iou (default: dice)
-"""
 import os
 import argparse
 import glob
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image as PILImage
 
 from model import UNet
 from transforms import base_img, base_mask
 from evaluate import run_evaluation, compute_metrics, find_optimal_threshold
+from plots import show_qualitative_all
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -82,14 +67,6 @@ def load_model(model_path, device):
     return model
 
 
-def _make_overlay(img, pred_bool, gt_bool):
-    rgb = np.stack([img, img, img], axis=2)
-    rgb[pred_bool & gt_bool] = [0.0, 0.75, 0.0]
-    rgb[pred_bool & ~gt_bool] = [0.75, 0.0, 0.0]
-    rgb[~pred_bool & gt_bool] = [0.0, 0.0, 0.75]
-    return rgb
-
-
 def _save_pred_masks(probs_t, paths, threshold, output_dir):
     for i, path in enumerate(paths):
         pred = ((probs_t[i].squeeze().numpy() > threshold) * 255).astype(np.uint8)
@@ -106,7 +83,7 @@ def _plot_no_mask(imgs_t, probs_t, threshold, output_dir):
     for j, ct in enumerate(col_titles):
         axes[0, j].set_title(ct, fontsize=8)
     for i in range(n):
-        img = imgs_t[i].squeeze().numpy()
+        img  = imgs_t[i].squeeze().numpy()
         prob = probs_t[i].squeeze().numpy()
         pred = (prob > threshold).astype(float)
         for j, (im, cmap) in enumerate([
@@ -115,48 +92,6 @@ def _plot_no_mask(imgs_t, probs_t, threshold, output_dir):
             axes[i, j].imshow(im, cmap=cmap)
             axes[i, j].axis('off')
         axes[i, 0].set_ylabel(f'#{i+1}', fontsize=7, rotation=90, va='center')
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, 'inference_results.png'), dpi=120, bbox_inches='tight')
-    plt.show()
-
-
-def _plot_with_mask(images, probs, gt, threshold, opt_thr, output_dir):
-    n = images.shape[0]
-    col_titles = [
-        'Original',
-        f'Pred (thr={threshold:.2f})',
-        f'Pred (opt={opt_thr:.2f})',
-        'Ground Truth',
-        'Overlay  TP=G FP=R FN=B',
-    ]
-    patches = [
-        mpatches.Patch(color=[0.0, 0.75, 0.0], label='TP'),
-        mpatches.Patch(color=[0.75, 0.0, 0.0], label='FP'),
-        mpatches.Patch(color=[0.0, 0.0, 0.75], label='FN'),
-    ]
-    fig, axes = plt.subplots(n, 5, figsize=(15, n * 2.5))
-    if n == 1:
-        axes = axes[np.newaxis, :]
-    for j, ct in enumerate(col_titles):
-        axes[0, j].set_title(ct, fontsize=8)
-    for i in range(n):
-        img = images[i].squeeze().numpy()
-        prob = probs[i].squeeze().numpy()
-        gt_i = gt[i].squeeze().numpy()
-        pred_05 = (prob > threshold).astype(bool)
-        pred_opt = (prob > opt_thr).astype(bool)
-        overlay = _make_overlay(img, pred_opt, gt_i.astype(bool))
-        for j, (im, cmap) in enumerate([
-            (img, 'gray'),
-            (pred_05.astype(float), 'gray'),
-            (pred_opt.astype(float), 'gray'),
-            (gt_i, 'gray'),
-            (overlay, None),
-        ]):
-            axes[i, j].imshow(im, cmap=cmap, vmin=0, vmax=1)
-            axes[i, j].axis('off')
-        axes[i, 0].set_ylabel(f'#{i+1}', fontsize=7, rotation=90, va='center')
-    fig.legend(handles=patches, loc='lower right', fontsize=8, ncol=3)
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, 'inference_results.png'), dpi=120, bbox_inches='tight')
     plt.show()
@@ -183,8 +118,13 @@ def run_inference(model_path, img_dir, output_dir, threshold=0.5,
         for k, v in eval_res['metrics_opt'].items():
             print(f"  {k:<12}: {v:.4f}")
 
-        _plot_with_mask(eval_res['images'], eval_res['probs'], eval_res['gt'],
-                        threshold, opt_thr, output_dir)
+        show_qualitative_all(
+            eval_res['images'], eval_res['probs'], eval_res['gt'],
+            threshold=threshold,
+            opt_threshold=opt_thr,
+            title=os.path.basename(model_path),
+            save_path=os.path.join(output_dir, 'inference_results.png'),
+        )
     else:
         dataset = ImageOnlyDataset(img_dir, base_img)
         loader = DataLoader(dataset, batch_size=4, shuffle=False)
@@ -197,7 +137,7 @@ def run_inference(model_path, img_dir, output_dir, threshold=0.5,
                 all_imgs.append(imgs.cpu())
                 all_paths.extend(paths)
 
-        imgs_t = torch.cat(all_imgs)
+        imgs_t  = torch.cat(all_imgs)
         probs_t = torch.cat(all_probs)
 
         _save_pred_masks(probs_t, all_paths, threshold, output_dir)

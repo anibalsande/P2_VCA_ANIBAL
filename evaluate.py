@@ -48,14 +48,6 @@ def find_optimal_threshold(probs_flat, gt_flat, metric='dice', n=37):
 
 
 def run_evaluation(model, loader, device, threshold=0.5, opt_metric='dice'):
-    """
-    Single-pass evaluation. Returns a dict with:
-      images, probs, gt  — (N, 1, H, W) CPU tensors
-      metrics_05         — metrics dict at threshold=0.5
-      metrics_opt        — metrics dict at optimal threshold
-      opt_threshold      — optimal threshold value
-      fpr, tpr, auc      — ROC curve data
-    """
     images, probs, gt = _collect(model, loader, device)
     probs_flat = probs.flatten()
     gt_flat = gt.flatten()

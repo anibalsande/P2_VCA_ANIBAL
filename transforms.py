@@ -53,7 +53,7 @@ class SpeckleNoise:
         return img
 
 
-# ── Base transforms (test / no augmentation) ─────────────────────────────────
+# Transforms base
 base_img = T.Compose([
     T.ToPILImage(),
     ResizePad(TARGET_H, TARGET_W, Image.BILINEAR),
@@ -66,8 +66,7 @@ base_mask = T.Compose([
     T.ToTensor(),
 ])
 
-# ── Geometric augmentation (train) ───────────────────────────────────────────
-# aug_img and aug_mask must be called with the same seed to sync transforms.
+# Augmentations geométricas (train)
 aug_img = T.Compose([
     T.ToPILImage(),
     ResizePad(TARGET_H, TARGET_W, Image.BILINEAR),
@@ -76,6 +75,7 @@ aug_img = T.Compose([
     T.RandomAffine(degrees=0, translate=(0.05, 0.05), scale=(0.92, 1.08)),
     T.ToTensor(),
 ])
+
 
 aug_mask = T.Compose([
     T.ToPILImage(),
@@ -87,7 +87,7 @@ aug_mask = T.Compose([
     T.ToTensor(),
 ])
 
-# ── Intensity augmentation (image only, never mask) ───────────────────────────
+# Augmentations de intensidad (solo imagen)
 int_transform = T.Compose([
     T.RandomApply([T.ColorJitter(brightness=0.15, contrast=0.15)], p=0.6),
     T.RandomApply([T.GaussianBlur(kernel_size=3)], p=0.3),
@@ -95,6 +95,7 @@ int_transform = T.Compose([
     T.Lambda(lambda img: torch.clamp(img, 0.0, 1.0)),
 ])
 
+# Augmentations de intensidad con ruido de speckle (solo imagen)
 int_transform_speckle = T.Compose([
     T.RandomApply([T.ColorJitter(brightness=0.15, contrast=0.15)], p=0.6),
     T.RandomApply([T.GaussianBlur(kernel_size=3)], p=0.3),
