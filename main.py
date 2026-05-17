@@ -15,7 +15,7 @@ from plots import (plot_single_loss, plot_all_losses,
                    plot_comparison_bar, plot_roc_curves, show_qualitative_all)
 
 SEED = 42
-NUM_EPOCHS = 300
+NUM_EPOCHS = 150
 BATCH_SIZE = 8
 LR = 1e-4
 POS_WEIGHT = 8.0
@@ -61,10 +61,10 @@ def main():
     # (augment, speckle, loss_type, label_smoothing, name)
     experiments = [
         (False, False, 'bce',      0.0,       'E1_Baseline'),
-        #(True,  False, 'bce',      0.0,       'E2_BCE_Aug'),
-        #(True,  False, 'bce_dice', 0.0,       'E3_BCEDice_Aug'),
-        #(True,  True,  'bce_dice', 0.0,       'E4_BCEDice_Aug_Speckle'),
-        #(True,  True,  'bce_dice', SMOOTHING, 'E5_BCEDice_Aug_Speckle_LS'),
+        (True,  False, 'bce',      0.0,       'E2_BCE_Aug'),
+        (True,  False, 'bce_dice', 0.0,       'E3_BCEDice_Aug'),
+        (True,  True,  'bce_dice', 0.0,       'E4_BCEDice_Aug_Speckle'),
+        (True,  True,  'bce_dice', SMOOTHING, 'E5_BCEDice_Aug_Speckle_LS'),
     ]
 
     all_losses = {}
