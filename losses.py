@@ -15,13 +15,12 @@ def dice_loss(logits, target, eps=1e-7):
 
 
 class BCEDiceLoss:
-    """
-    BCE plano (sin pos_weight) + Dice en proporciones iguales (E3, E4, E5).
-    Dice ya maneja el desequilibrio de clases por normalización interna.
-    """
-    def __init__(self, alpha=0.5):
+    """BCE con pos_weight + Dice (E3, E4, E5)."""
+    def __init__(self, alpha=0.5, pos_weight=1.0, device=None):
         self.alpha = alpha
-        self._bce  = nn.BCEWithLogitsLoss()
+        device = device or torch.device('cpu')
+        pw = torch.tensor([pos_weight], dtype=torch.float32).to(device)
+        self._bce = nn.BCEWithLogitsLoss(pos_weight=pw)
 
     def __call__(self, logits, target):
         return (self.alpha * self._bce(logits, target)

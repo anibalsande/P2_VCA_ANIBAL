@@ -55,16 +55,16 @@ def main():
     test_images = [all_images[i] for i in test_idx]
     test_masks = [all_masks[i] for i in test_idx]
 
-    weighted_bce = get_weighted_bce(POS_WEIGHT, DEVICE)
-    bce_dice = BCEDiceLoss(alpha=0.5)
+    weighted_bce = get_weighted_bce(POS_WEIGHT, device=DEVICE)
+    bce_dice = BCEDiceLoss(alpha=0.5, pos_weight=POS_WEIGHT, device=DEVICE)
 
     # (augment, speckle, loss_type, label_smoothing, name)
     experiments = [
-        (False, False, 'bce',      0.0,       'E1_Baseline'),
-        (True,  False, 'bce',      0.0,       'E2_BCE_Aug'),
+        #(False, False, 'bce',      0.0,       'E1_Baseline'),
+        #(True,  False, 'bce',      0.0,       'E2_BCE_Aug'),
         (True,  False, 'bce_dice', 0.0,       'E3_BCEDice_Aug'),
-        (True,  True,  'bce_dice', 0.0,       'E4_BCEDice_Aug_Speckle'),
-        (True,  True,  'bce_dice', SMOOTHING, 'E5_BCEDice_Aug_Speckle_LS'),
+        #(True,  True,  'bce_dice', 0.0,       'E4_BCEDice_Aug_Speckle'),
+        #(True,  True,  'bce_dice', SMOOTHING, 'E5_BCEDice_Aug_Speckle_LS'),
     ]
 
     all_losses = {}
