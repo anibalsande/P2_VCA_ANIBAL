@@ -15,7 +15,7 @@ from plots import (plot_single_loss, plot_all_losses,
                    plot_comparison_bar, plot_roc_curves, show_qualitative_all)
 
 SEED = 12
-NUM_EPOCHS = 150
+NUM_EPOCHS = 120
 BATCH_SIZE = 8
 LR = 1e-4
 POS_WEIGHT = 8.0
