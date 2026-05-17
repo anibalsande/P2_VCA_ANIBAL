@@ -16,7 +16,7 @@ from plots import (plot_single_loss, plot_all_losses,
 
 SEED = 42
 NUM_EPOCHS = 150
-BATCH_SIZE = 4
+BATCH_SIZE = 8
 LR = 1e-4
 POS_WEIGHT = 8.0
 SMOOTHING = 0.01
@@ -92,7 +92,8 @@ def main():
         )
 
         train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,
-                                  num_workers=NUM_WORKERS, pin_memory=True)
+                                  num_workers=NUM_WORKERS, pin_memory=True,
+                                  generator=torch.Generator().manual_seed(SEED))
         test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE, shuffle=False,
                                  num_workers=NUM_WORKERS, pin_memory=True)
 
