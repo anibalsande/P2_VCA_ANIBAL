@@ -14,8 +14,8 @@ from evaluate import run_evaluation
 from plots import (plot_single_loss, plot_all_losses,
                    plot_comparison_bar, plot_roc_curves, show_qualitative_all)
 
-SEED = 12
-NUM_EPOCHS = 130
+SEED = 42
+NUM_EPOCHS = 150
 BATCH_SIZE = 8
 LR = 1e-4
 POS_WEIGHT = 8.0
@@ -61,10 +61,10 @@ def main():
     # (augment, speckle, loss_type, label_smoothing, name)
     experiments = [
         (False, False, 'bce',      0.0,       'E1_Baseline'),
-        (True,  False, 'bce',      0.0,       'E2_BCE_Aug'),
-        (True,  False, 'bce_dice', 0.0,       'E3_BCEDice_Aug'),
-        (True,  True,  'bce_dice', 0.0,       'E4_BCEDice_Aug_Speckle'),
-        (True,  True,  'bce_dice', SMOOTHING, 'E5_BCEDice_Aug_Speckle_LS'),
+        #(True,  False, 'bce',      0.0,       'E2_BCE_Aug'),
+        #(True,  False, 'bce_dice', 0.0,       'E3_BCEDice_Aug'),
+        #(True,  True,  'bce_dice', 0.0,       'E4_BCEDice_Aug_Speckle'),
+        #(True,  True,  'bce_dice', SMOOTHING, 'E5_BCEDice_Aug_Speckle_LS'),
     ]
 
     all_losses = {}
@@ -92,10 +92,9 @@ def main():
         )
 
         train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,
-                                  num_workers=NUM_WORKERS, pin_memory=True,
-                                  generator=torch.Generator().manual_seed(SEED))
+                                  num_workers=NUM_WORKERS, pin_memory=True)
         test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE, shuffle=False,
-                                 num_workers=NUM_WORKERS, pin_memory=True)
+                                  num_workers=NUM_WORKERS, pin_memory=True)
 
         model = UNet(input_channels=1, n_class=1)
         loss_fn = weighted_bce if loss_type == 'bce' else bce_dice
