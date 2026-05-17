@@ -16,7 +16,7 @@ from plots import (plot_single_loss, plot_all_losses,
 
 SEED = 42
 NUM_EPOCHS = 150
-BATCH_SIZE = 8
+BATCH_SIZE = 4
 LR = 1e-4
 POS_WEIGHT = 8.0
 SMOOTHING = 0.01
